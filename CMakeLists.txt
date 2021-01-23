@@ -1878,6 +1878,7 @@ find_package(Qt5
     Sql
     Svg
     Test
+    WebSockets
     Widgets
     Xml
   REQUIRED
@@ -1892,6 +1893,7 @@ target_link_libraries(mixxx-lib PUBLIC
   Qt5::Sql
   Qt5::Svg
   Qt5::Test
+  Qt5::WebSockets
   Qt5::Widgets
   Qt5::Xml)
 target_compile_definitions(mixxx-lib PUBLIC QT_TABLET_SUPPORT QT_USE_QSTRINGBUILDER)

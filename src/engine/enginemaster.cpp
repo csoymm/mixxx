@@ -3,6 +3,9 @@
 #include <QList>
 #include <QPair>
 #include <QtDebug>
+#include <QtWebSockets/QtWebSockets>
+#include "QtWebSockets/qwebsocketserver.h"
+#include "QtWebSockets/qwebsocket.h"
 
 #include "control/controlaudiotaperpot.h"
 #include "control/controlpotmeter.h"
@@ -48,7 +51,10 @@ EngineMaster::EngineMaster(
           m_busTalkoverHandle(registerChannelGroup("[BusTalkover]")),
           m_busCrossfaderLeftHandle(registerChannelGroup("[BusLeft]")),
           m_busCrossfaderCenterHandle(registerChannelGroup("[BusCenter]")),
-          m_busCrossfaderRightHandle(registerChannelGroup("[BusRight]")) {
+          m_busCrossfaderRightHandle(registerChannelGroup("[BusRight]")),
+          m_pWebSocketServer(new QWebSocketServer(QStringLiteral("Echo Server"),
+                             QWebSocketServer::NonSecureMode, this))
+{
     pEffectsManager->registerInputChannel(m_masterHandle);
     pEffectsManager->registerInputChannel(m_headphoneHandle);
     pEffectsManager->registerOutputChannel(m_masterHandle);
@@ -65,6 +71,14 @@ EngineMaster::EngineMaster(
     m_bExternalRecordBroadcastInputConnected = false;
     m_pWorkerScheduler = new EngineWorkerScheduler(this);
     m_pWorkerScheduler->start(QThread::HighPriority);
+    int port = 8888;
+
+    if (m_pWebSocketServer->listen(QHostAddress::Any, port)) {
+        qDebug() << "Echoserver listening on port" << port;
+        connect(m_pWebSocketServer, &QWebSocketServer::newConnection,
+                this, &EngineMaster::onNewConnection);
+        connect(m_pWebSocketServer, &QWebSocketServer::closed, this, &EngineMaster::closed);
+    }
 
     // Master sample rate
     m_pMasterSampleRate = new ControlObject(ConfigKey(group, "samplerate"), true, true);
@@ -251,7 +265,59 @@ EngineMaster::~EngineMaster() {
         delete pChannelInfo->m_pMuteControl;
         delete pChannelInfo;
     }
+
+    // Teardown WebSocket
+    m_pWebSocketServer->close();
+    qDeleteAll(m_clients.begin(), m_clients.end());
 }
+
+//! [onNewConnection]
+void EngineMaster::onNewConnection()
+{
+    QWebSocket *pSocket = m_pWebSocketServer->nextPendingConnection();
+
+    qDebug() << "****Connected";
+    connect(pSocket, &QWebSocket::textMessageReceived, this, &EngineMaster::processTextMessage);
+    connect(pSocket, &QWebSocket::binaryMessageReceived, this, &EngineMaster::processBinaryMessage);
+    connect(pSocket, &QWebSocket::disconnected, this, &EngineMaster::socketDisconnected);
+
+    m_clients << pSocket;
+}
+//! [onNewConnection]
+
+//! [processTextMessage]
+void EngineMaster::processTextMessage(QString message)
+{
+    QWebSocket *pClient = qobject_cast<QWebSocket *>(sender());
+    qDebug() << "****Message received:" << message;
+    if (pClient) {
+        pClient->sendTextMessage(message);
+    }
+}
+//! [processTextMessage]
+
+//! [processBinaryMessage]
+void EngineMaster::processBinaryMessage(QByteArray message)
+{
+    QWebSocket *pClient = qobject_cast<QWebSocket *>(sender());
+    qDebug() << "****Binary Message received:" << message;
+    if (pClient) {
+        pClient->sendBinaryMessage(message);
+    }
+}
+//! [processBinaryMessage]
+
+//! [socketDisconnected]
+void EngineMaster::socketDisconnected()
+{
+    QWebSocket *pClient = qobject_cast<QWebSocket *>(sender());
+    qDebug() << "socketDisconnected:" << pClient;
+    if (pClient) {
+        m_clients.removeAll(pClient);
+        pClient->deleteLater();
+    }
+}
+//! [socketDisconnected]
 
 const CSAMPLE* EngineMaster::getMasterBuffer() const {
     return m_pMaster;

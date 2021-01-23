@@ -2,6 +2,8 @@
 
 #include <QObject>
 #include <QVarLengthArray>
+#include <QList>
+#include <QByteArray>
 
 #include "preferences/usersettings.h"
 #include "control/controlobject.h"
@@ -12,6 +14,9 @@
 #include "soundio/soundmanager.h"
 #include "soundio/soundmanagerutil.h"
 #include "recording/recordingmanager.h"
+
+QT_FORWARD_DECLARE_CLASS(QWebSocketServer)
+QT_FORWARD_DECLARE_CLASS(QWebSocket)
 
 class EngineWorkerScheduler;
 class EngineBuffer;
@@ -250,6 +255,15 @@ class EngineMaster : public QObject, public AudioSource {
     ControlObject* m_pHeadphoneEnabled;
     ControlObject* m_pBoothEnabled;
 
+  Q_SIGNALS:
+    void closed();
+
+  private Q_SLOTS:
+    void onNewConnection();
+    void processTextMessage(QString message);
+    void processBinaryMessage(QByteArray message);
+    void socketDisconnected();
+
   private:
     // Processes active channels. The master sync channel (if any) is processed
     // first and all others are processed after. Populates m_activeChannels,
@@ -346,4 +360,6 @@ class EngineMaster : public QObject, public AudioSource {
 
     volatile bool m_bBusOutputConnected[3];
     bool m_bExternalRecordBroadcastInputConnected;
+    QWebSocketServer *m_pWebSocketServer;
+    QList<QWebSocket *> m_clients;
 };
